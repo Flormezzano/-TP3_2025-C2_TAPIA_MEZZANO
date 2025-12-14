@@ -320,8 +320,46 @@ def contar_pips_y_guardar(dados, out_dir):
 
 
 
-
 #================================ PRUEBA ========================================
+
+
+def mostrar_tirada(out_dir, i):
+    out_dir = Path(out_dir)
+
+    def read_rgb(p):
+        img = cv2.imread(str(p))
+        return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+    plt.figure(figsize=(14, 3))
+    plt.suptitle(f"TIRADA {i} - Dados (crops)")
+    for k in range(1, 6):
+        plt.subplot(1, 5, k)
+        plt.imshow(read_rgb(out_dir / f"dado_{k}.png"))
+        plt.title(f"Dado {k}")
+        plt.axis("off")
+    plt.tight_layout()
+    plt.show()
+
+    boxes_path = out_dir / "dados_boxes_full.png"
+    if not boxes_path.exists():
+        boxes_path = out_dir / "dados_boxes.png"
+
+    plt.figure(figsize=(14, 5))
+    plt.suptitle(f"TIRADA {i} - Frame / Boxes / Máscara")
+    plt.subplot(1, 3, 1); plt.imshow(read_rgb(out_dir / "frame_reposo.png")); plt.title("Frame reposo"); plt.axis("off")
+    plt.subplot(1, 3, 2); plt.imshow(read_rgb(boxes_path)); plt.title("Boxes"); plt.axis("off")
+    plt.subplot(1, 3, 3); plt.imshow(read_rgb(out_dir / "mask_rojo.png")); plt.title("Máscara rojo"); plt.axis("off")
+    plt.tight_layout()
+    plt.show()
+
+    pips = sorted(out_dir.glob("pips_plot*.png"))[0]
+    plt.figure(figsize=(12, 3))
+    plt.title(f"TIRADA {i} - Pips detectados")
+    plt.imshow(read_rgb(pips))
+    plt.axis("off")
+    plt.tight_layout()
+    plt.show()
+
 
 
 if __name__ == "__main__":
@@ -415,7 +453,7 @@ if __name__ == "__main__":
         for j, v in enumerate(valores, start=1):
             print(f"Dado {j}: {v} pips detectados")
 
-
+        mostrar_tirada(out_dir, i)
 
 
 # ================================ EJERCICIO B ======================================
@@ -584,4 +622,7 @@ if __name__ == "__main__":
         out_video = out_dir + f"/tirada_{i}_anotada.mp4"
         generar_video_anotado(video, out_video, out_dir)
 
-        print(f"Listo: {out_video}")
+        print(f"Video guardado: {out_video}")
+
+
+
