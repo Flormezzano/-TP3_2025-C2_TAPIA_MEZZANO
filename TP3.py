@@ -175,7 +175,7 @@ def detectar_dados(frame_bgr, out_dir, expected=5):
             "id": i,
             "crop": crop,
             "box_roi": box_roi,
-            "box": box_global,     # <-- ESTE es el que usás para dibujar en el video
+            "box": box_global,  
             "offx": offx,
             "offy": offy
         })
@@ -188,10 +188,6 @@ def detectar_dados(frame_bgr, out_dir, expected=5):
 
 
 def save_motion_plot(scores, segs, thr, out_path):
-    try:
-        import matplotlib.pyplot as plt
-    except Exception:
-        return  # si no hay matplotlib, no plotteamos
 
     x = np.arange(len(scores))
     plt.figure()
@@ -246,22 +242,18 @@ def _montaje_5(imgs, target_h=280):
     return cv2.hconcat(imgs2)
 
 
-
 def contar_pips_y_guardar(dados, out_dir):
-    # En vez de guardar mil intermedios, guardamos 1 sola imagen final por tirada:
-    # out_dir/pips_plot.png  (5 dados con contornos + valor)
-
     valores_dados = []
     paneles = []
 
-    # Parámetros (tocables) para pips en HSV
+    # Parámetros para pips en HSV
     # pips = brillantes (V alto) y poco saturados (S bajo)
     PIP_V_MIN = 150
     PIP_S_MAX = 110
 
     # Filtros geométricos
-    UMBRAL_ROUNDNESS_PIP = 0.60   # antes 0.70 (era muy estricto)
-    UMBRAL_ASPECT_RATIO = 1.60    # antes 1.35 (era muy estricto)
+    UMBRAL_ROUNDNESS_PIP = 0.60  
+    UMBRAL_ASPECT_RATIO = 1.60    
 
     for d in dados:
         idx = d["id"]
@@ -280,8 +272,6 @@ def contar_pips_y_guardar(dados, out_dir):
         k_dil = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (11, 11))
         dice_mask = cv2.dilate(dice_mask, k_dil, iterations=1)
 
-
-        # --- DETECCIÓN DE PIPS (más robusta que Otsu) ---
         # pips: baja saturación + alto valor, pero solo dentro del dado
         pip_mask = cv2.inRange(hsv, (0, 0, PIP_V_MIN), (179, PIP_S_MAX, 255))
         pip_mask = cv2.bitwise_and(pip_mask, pip_mask, mask=dice_mask)
@@ -316,13 +306,13 @@ def contar_pips_y_guardar(dados, out_dir):
         valores_dados.append(num_pips)
         d["valor"] = num_pips
 
-        # Panel visual: crop + contornos + texto
+        # crop + contornos
         panel = crop.copy()
         cv2.drawContours(panel, validos, -1, (0, 255, 0), 2)
 
         paneles.append(panel)
 
-    # guardamos un solo “plot” por tirada
+    # guardamos un solo plot por tirada
     plot_img = _montaje_5(paneles, target_h=280)
     cv2.imwrite(out_dir + "/pips_plot_" + os.path.basename(out_dir) + ".png", plot_img)
 
@@ -352,10 +342,10 @@ if __name__ == "__main__":
             print(f"[WARN] No existe el video: {video}")
             continue
 
-        # 1) motion score
+        # motion score
         scores, fps = capturar_movimiento(video)
 
-        # 2) reposos
+        # reposos
         segs, thr, min_len = encontrar_estaticos(scores, fps)
 
         # fallback simple si no hay reposo
@@ -375,11 +365,11 @@ if __name__ == "__main__":
             print("No se detectó reposo.")
             continue
 
-        # Motion Plot (siempre)
+        # Motion Plot   
         save_motion_plot(scores, segs, thr, out_dir + "/motion_plot.png")
         print("Guardado: motion_plot.png")
 
-        # Probar cada reposo y quedarnos con el primero que detecte 5 dados
+        # prueba cada reposo y quedarnos con el primero que detecte 5 dados
         encontrado = False
         dados_ok = None
         frame_ok = None
@@ -417,7 +407,7 @@ if __name__ == "__main__":
         print("Frame reposo elegido:", idx_ok, "| segmento:", seg_ok)
         print("Guardado: frame_reposo.png")
 
-        # Conteo de pips + guardar intermedios en subcarpeta
+        # Conteo de pips
         valores = contar_pips_y_guardar(dados_ok, out_dir)
 
         # Imprimir resultado formateado
@@ -430,14 +420,7 @@ if __name__ == "__main__":
 
 # ================================ EJERCICIO B ======================================
 
-
-# ===== Conteo de pips (SIN guardar subcarpetas) =====
-
-
 def contar_pips(dados):
-    # misma idea que venías usando: pips = baja saturación + alto valor (HSV),
-    # dentro del dado rojo
-
     valores = []
 
     PIP_V_MIN = 150
@@ -494,9 +477,6 @@ def contar_pips(dados):
 
     return valores
 
-
-# ===== Utilidad: ver si frame está en un segmento =====
-
 def buscar_segmento(frame_idx, segmentos_anotados, pad=15):
     for s in segmentos_anotados:
         a, b = s["seg"]
@@ -506,7 +486,6 @@ def buscar_segmento(frame_idx, segmentos_anotados, pad=15):
             return s
     return None
 
-# ===== Ejercicio B: generar video anotado =====
 
 def generar_video_anotado(video_path, out_video_path, out_dir):
     cap = cv2.VideoCapture(video_path)
@@ -518,8 +497,7 @@ def generar_video_anotado(video_path, out_video_path, out_dir):
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
 
-    # 1) reposos (con tu lógica existente)
-    scores, fps_scores = capturar_movimiento(video_path)  # fps_scores debería coincidir con fps
+    scores, fps_scores = capturar_movimiento(video_path)  
     segs, thr, min_len = encontrar_estaticos(scores, fps_scores)
 
     if len(segs) == 0:
@@ -527,10 +505,10 @@ def generar_video_anotado(video_path, out_video_path, out_dir):
     if len(segs) == 0:
         segs, thr, min_len = encontrar_estaticos(scores, fps_scores, percentile=30)
 
-    # guardamos plot como debug (sirve para el informe)
+    # guardamos plot como debug
     save_motion_plot(scores, segs, thr, out_dir + "/motion_plot.png")
 
-    # 2) Precomputar anotaciones por segmento
+    # precomputar anotaciones por segmento
     segmentos_anotados = []
 
     for seg in segs:
@@ -555,11 +533,10 @@ def generar_video_anotado(video_path, out_video_path, out_dir):
             "valores": valores
         })
 
-    # 3) Preparar writer
+    # preparar writer
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     out = cv2.VideoWriter(out_video_path, fourcc, fps, (width, height))
 
-    # volver al inicio
     cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
     frame_idx = 0
@@ -589,8 +566,6 @@ def generar_video_anotado(video_path, out_video_path, out_dir):
     cap.release()
     out.release()
 
-
-# ===== MAIN B: uno por cada archivo =====
 
 if __name__ == "__main__":
     BASE = str(Path(__file__).resolve().parent)
