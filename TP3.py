@@ -12,23 +12,33 @@ import os
 
 
 def capturar_movimiento(video_path, resize_w=540, diff_thr=10):
+    """
+    Calcula un score de movimiento entre frames consecutivos de un video.
+
+    Recorre el video completo y mide cuánto cambia la imagen frame a frame,
+    generando una señal temporal que permite identificar tramos de reposo
+    y movimiento.
+
+    """
+
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         raise RuntimeError(f"No se pudo abrir: {video_path}")
 
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-    scores = []
+    scores = []     #cantidad de movimiento entre frames consecutivos (proporcion)
     prev = None
+
 
     while True:
         ret, frame = cap.read()
         if not ret:
             break
-        # achicar el frame para que el score sea más estable
+
         h, w = frame.shape[:2]
         if w > resize_w:
             scale = resize_w / float(w)
-            frame = cv2.resize(frame, (resize_w, int(h * scale)), interpolation=cv2.INTER_AREA)
+            frame = cv2.resize(frame, (resize_w, int(h * scale)), interpolation=cv2.INTER_AREA) # cambiamos resolucion
 
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         gray = cv2.GaussianBlur(gray, (5, 5), 0)
@@ -36,9 +46,9 @@ def capturar_movimiento(video_path, resize_w=540, diff_thr=10):
         if prev is None:
             scores.append(1.0)
         else:
-            diff = cv2.absdiff(gray, prev)
+            diff = cv2.absdiff(gray, prev) # cuánto cambia cada pixel entre frames consecutivos
             changed = (diff > diff_thr).astype(np.uint8)
-            scores.append(changed.mean())  # porcentaje de pixeles que cambiaron
+            scores.append(changed.mean())  # proporcion de pixeles que cambiaron
 
         prev = gray
 
@@ -47,11 +57,18 @@ def capturar_movimiento(video_path, resize_w=540, diff_thr=10):
 
 
 def encontrar_estaticos(scores, fps, percentile=10, min_static_sec=0.30):
+    """
+    Detecta segmentos estáticos a partir de una señal de movimiento.
+
+    Utiliza un umbral basado en percentiles para identificar intervalos
+    donde el movimiento es bajo durante una duración mínima.
+    """
+
     # umbral adaptativo (no fijo): percentil bajo de los scores
     tail = scores[min(5, len(scores)):]  # ignoramos los primeros frames
-    thr = float(np.percentile(tail, percentile))
+    thr = float(np.percentile(tail, percentile)) # umbral adaptativo
 
-    min_len = max(3, int(min_static_sec * fps))
+    min_len = max(3, int(min_static_sec * fps)) # cantidad de frames minimo
 
     segs = []
     i, n = 0, len(scores)
@@ -61,7 +78,7 @@ def encontrar_estaticos(scores, fps, percentile=10, min_static_sec=0.30):
             while j < n and scores[j] <= thr:
                 j += 1
             if (j - i) >= min_len:
-                segs.append((i, j))
+                segs.append((i, j)) #guardamos intervalo de frames de reposo
             i = j
         else:
             i += 1
@@ -69,32 +86,30 @@ def encontrar_estaticos(scores, fps, percentile=10, min_static_sec=0.30):
     return segs, thr, min_len
 
 
-def encontrar_frame(video_path, seg, pick="min_motion", scores=None):
-    a, b = seg
-    if pick == "middle" or scores is None:
-        idx = (a + b) // 2
-    else:
-        idx = int(a + np.argmin(scores[a:b]))
-
-    cap = cv2.VideoCapture(video_path)
-    cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
-    ok, frame = cap.read()
-    cap.release()
-    if not ok:
-        raise RuntimeError("No pude leer el frame elegido.")
-    return idx, frame
-
-
 def recortar_zona_verde(frame, top=0.05, bottom=0.80, left=0.03, right=0.97):
+    """
+    Recorta una región de interés del frame original.
+
+    Se utiliza para eliminar bordes irrelevantes y reducir el área
+    de análisis a la zona donde aparecen los dados.
+    """
+
     H, W = frame.shape[:2]
     y0 = int(H * top)
     y1 = int(H * bottom)
     x0 = int(W * left)
     x1 = int(W * right)
-    return frame[y0:y1, x0:x1], x0, y0
+    return frame[y0:y1, x0:x1], x0, y0 # devolvemos offsets para calcular en el frame original
 
 
 def detectar_dados(frame_bgr, out_dir, expected=5):
+    """
+    Detecta dados rojos en un frame estático.
+
+    Segmenta por color, filtra por área y forma, y devuelve hasta
+    una cantidad esperada de dados ordenados espacialmente.
+    """
+
     # Recortar zona verde (ROI)
     roi, offx, offy = recortar_zona_verde(frame_bgr, top=0.05, bottom=0.80, left=0.03, right=0.97)
 
@@ -105,17 +120,19 @@ def detectar_dados(frame_bgr, out_dir, expected=5):
     hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
     mask1 = cv2.inRange(hsv, (0, 80, 50), (10, 255, 255))
     mask2 = cv2.inRange(hsv, (170, 80, 50), (179, 255, 255))
-    mask = cv2.bitwise_or(mask1, mask2)
+    mask = cv2.bitwise_or(mask1, mask2) # máscara roja 
 
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=1)
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=2)
 
-    # Contornos sobre la máscara
+    # contornos sobre la máscara
     cnts, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-    # Candidatos por forma/tamaño
+    # candidatos por forma/tamaño
     candidatos = []
+
+    # usamos areas relativas, recomendacion de tp2 
     for c in cnts:
         area = cv2.contourArea(c)
         if area < 0.001 * img_area:
@@ -205,10 +222,14 @@ def save_motion_plot(scores, segs, thr, out_path):
 
 
 
-# =================== CONTEO DE PIPS (con subcarpeta conteo_pips) ==================== 
+# =================== CONTEO DE PIPS ==================== 
 
 
 def _roundness(contour):
+    """
+    Calcula un índice de circularidad de un contorno.
+    """
+
     area = cv2.contourArea(contour)
     (xc, yc), r = cv2.minEnclosingCircle(contour)
     if r <= 0:
@@ -216,21 +237,35 @@ def _roundness(contour):
     area_circ = np.pi * (r ** 2)
     return float(area / (area_circ + 1e-6))
 
+
 def _aspect_ratio(contour):
+    """
+    Calcula la relación de aspecto de un contorno.
+    """
+
     x, y, w, h = cv2.boundingRect(contour)
     if w == 0 or h == 0:
         return 999.0
     return max(w, h) / float(min(w, h))
 
+
 def _resize_to_height(img, target_h):
+    """
+    Redimensiona una imagen manteniendo proporción, fijando la altura.
+    """
+
     h, w = img.shape[:2]
     if h == target_h:
         return img
     scale = target_h / float(h)
     return cv2.resize(img, (int(w * scale), target_h), interpolation=cv2.INTER_AREA)
 
+
 def _montaje_5(imgs, target_h=280):
-    # arma 1 imagen con 5 paneles en fila
+    """
+    arma 1 imagen con 5 paneles en fila
+    """
+
     imgs2 = []
     for im in imgs:
         if im is None:
@@ -243,6 +278,12 @@ def _montaje_5(imgs, target_h=280):
 
 
 def contar_pips_y_guardar(dados, out_dir):
+    """
+    Cuenta los pips de cada dado y guarda evidencia visual.
+
+    Aplica segmentación por HSV, filtros geométricos y genera
+    imágenes de debug y paneles resumen.
+    """
     valores_dados = []
     paneles = []
 
@@ -377,7 +418,7 @@ if __name__ == "__main__":
             os.makedirs(out_dir)
 
         if not os.path.exists(video):
-            print(f"[WARN] No existe el video: {video}")
+            print(f"No existe el video: {video}")
             continue
 
         # motion score
@@ -395,8 +436,6 @@ if __name__ == "__main__":
         print("\n==============================")
         print("VIDEO:", f"tirada_{i}.mp4")
         print("OUT:", out_dir)
-        print("FPS:", fps)
-        print("thr:", thr, "| min_len:", min_len)
         print("segmentos:", segs)
 
         if len(segs) == 0:
@@ -459,6 +498,13 @@ if __name__ == "__main__":
 # ================================ EJERCICIO B ======================================
 
 def contar_pips(dados):
+    """
+    Cuenta los pips de cada dado sin generar salidas visuales.
+
+    Versión pensada para uso en video, donde solo se
+    necesita el valor numérico de cada dado.
+    """
+
     valores = []
 
     PIP_V_MIN = 150
@@ -516,6 +562,13 @@ def contar_pips(dados):
     return valores
 
 def buscar_segmento(frame_idx, segmentos_anotados, pad=15):
+    """
+    Determina si un frame pertenece a un segmento estático anotado.
+
+    Permite un margen para extender la validez de la anotación
+    más allá del segmento exacto.
+    """
+
     for s in segmentos_anotados:
         a, b = s["seg"]
         a2 = max(0, a - pad)
@@ -526,6 +579,13 @@ def buscar_segmento(frame_idx, segmentos_anotados, pad=15):
 
 
 def generar_video_anotado(video_path, out_video_path, out_dir):
+    """
+    Genera un video anotado con bounding boxes y valores de dados.
+
+    Detecta segmentos estáticos, analiza un frame por segmento,
+    y reutiliza esas anotaciones para todo el tramo correspondiente.
+    """
+
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         print("No se pudo abrir:", video_path)
@@ -583,7 +643,7 @@ def generar_video_anotado(video_path, out_video_path, out_dir):
         if not ret:
             break
 
-        seg_act = buscar_segmento(frame_idx, segmentos_anotados, pad=5) # podriamos aumentar el pad para que deje los BB mas tiempo
+        seg_act = buscar_segmento(frame_idx, segmentos_anotados, pad=5) # buscamos el segmento
 
         if seg_act is not None:
             # dibujar solo si estamos en reposo anotado
@@ -616,7 +676,7 @@ if __name__ == "__main__":
         os.makedirs(out_dir, exist_ok=True)
 
         if not os.path.exists(video):
-            print(f"[WARN] No existe el video: {video}")
+            print(f"No existe el video: {video}")
             continue
 
         out_video = out_dir + f"/tirada_{i}_anotada.mp4"
